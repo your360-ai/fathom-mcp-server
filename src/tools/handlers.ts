@@ -1,6 +1,8 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError } from "zod";
 import { FathomAPIClient } from "../modules/fathom/api";
+import type { ListMeetingsResType } from "../modules/fathom/schema";
+import { MAX_SEARCH_PAGES } from "../shared/constants";
 import { AppError } from "../shared/errors";
 import {
   listMeetingsReqSchema,
@@ -115,6 +117,22 @@ export async function listTeamMembers(
   }
 }
 
+type Meeting = ListMeetingsResType["items"][number];
+
+function meetingMatchesQuery(meeting: Meeting, query: string): boolean {
+  return (
+    meeting.title.toLowerCase().includes(query) ||
+    meeting.meeting_title?.toLowerCase().includes(query) ||
+    meeting.recorded_by.name.toLowerCase().includes(query) ||
+    meeting.recorded_by.email.toLowerCase().includes(query) ||
+    meeting.calendar_invitees.some(
+      (invitee) =>
+        invitee.name?.toLowerCase().includes(query) ||
+        invitee.email?.toLowerCase().includes(query),
+    )
+  );
+}
+
 export async function searchMeetings(
   userId: string,
   args: unknown,
@@ -122,20 +140,37 @@ export async function searchMeetings(
   try {
     const input = searchMeetingsReqSchema.parse(args);
     const service = await FathomAPIClient.createAuthorizedService(userId);
-    const data = await service.listMeetings(input);
-
     const query = input.query.toLowerCase();
-    const filtered = data.items.filter(
-      (m) =>
-        m.title.toLowerCase().includes(query) ||
-        m.meeting_title?.toLowerCase().includes(query),
-    );
+
+    let cursor: string | undefined = input.cursor;
+    let totalSearched = 0;
+    let pagesSearched = 0;
+    const matchedMeetings: Meeting[] = [];
+
+    do {
+      const data = await service.listMeetings({ ...input, cursor });
+      totalSearched += data.items.length;
+      pagesSearched++;
+
+      const matches = data.items.filter((m) => meetingMatchesQuery(m, query));
+      matchedMeetings.push(...matches);
+
+      cursor = data.next_cursor ?? undefined;
+    } while (cursor && pagesSearched < MAX_SEARCH_PAGES);
 
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({ items: filtered }, null, 2),
+          text: JSON.stringify(
+            {
+              items: matchedMeetings,
+              next_cursor: cursor ?? null,
+              total_searched: totalSearched,
+            },
+            null,
+            2,
+          ),
         },
       ],
     };

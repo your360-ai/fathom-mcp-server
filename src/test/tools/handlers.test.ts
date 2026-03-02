@@ -227,16 +227,53 @@ describe("tools/handlers", () => {
   });
 
   describe("searchMeetings", () => {
+    const noMatch = {
+      recorded_by: {
+        name: "Host Name",
+        email: "host@example.com",
+        email_domain: "example.com",
+        team: null,
+      },
+      calendar_invitees: [],
+    };
+
+    const withInvitees = (
+      invitees: { name: string | null; email: string | null }[],
+    ) => ({
+      recorded_by: {
+        name: "Host Name",
+        email: "host@example.com",
+        email_domain: "example.com",
+        team: null,
+      },
+      calendar_invitees: invitees.map((i) => ({
+        ...i,
+        email_domain: i.email?.split("@")[1] ?? null,
+        is_external: true,
+      })),
+    });
+
     it("filters meetings by title", async () => {
       mockClient.listMeetings.mockResolvedValue({
         items: [
-          { title: "Weekly Standup", meeting_title: null, recording_id: 1 },
+          {
+            title: "Weekly Standup",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
           {
             title: "Project Review",
             meeting_title: "Sprint 5",
             recording_id: 2,
+            ...noMatch,
           },
-          { title: "1:1 with Manager", meeting_title: null, recording_id: 3 },
+          {
+            title: "1:1 with Manager",
+            meeting_title: null,
+            recording_id: 3,
+            ...noMatch,
+          },
         ],
         limit: 20,
         next_cursor: null,
@@ -257,11 +294,13 @@ describe("tools/handlers", () => {
             title: "Meeting 1",
             meeting_title: "Sprint Planning",
             recording_id: 1,
+            ...noMatch,
           },
           {
             title: "Meeting 2",
             meeting_title: "Retrospective",
             recording_id: 2,
+            ...noMatch,
           },
         ],
         limit: 20,
@@ -272,12 +311,19 @@ describe("tools/handlers", () => {
 
       const parsed = JSON.parse(getTextContent(result));
       expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].recording_id).toBe(1);
+      expect(parsed.items[0].meeting_title).toBe("Sprint Planning");
     });
 
     it("search is case-insensitive", async () => {
       mockClient.listMeetings.mockResolvedValue({
         items: [
-          { title: "WEEKLY STANDUP", meeting_title: null, recording_id: 1 },
+          {
+            title: "WEEKLY STANDUP",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
         ],
         limit: 20,
         next_cursor: null,
@@ -287,6 +333,353 @@ describe("tools/handlers", () => {
 
       const parsed = JSON.parse(getTextContent(result));
       expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].title).toBe("WEEKLY STANDUP");
+      expect(parsed.items[0].recording_id).toBe(1);
+    });
+
+    it("matches on recorded_by name", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "Q4 Planning",
+            meeting_title: null,
+            recording_id: 1,
+            recorded_by: {
+              name: "Alice Johnson",
+              email: "alice@example.com",
+              email_domain: "example.com",
+              team: null,
+            },
+            calendar_invitees: [],
+          },
+          {
+            title: "Budget Review",
+            meeting_title: null,
+            recording_id: 2,
+            recorded_by: {
+              name: "Bob Smith",
+              email: "bob@example.com",
+              email_domain: "example.com",
+              team: null,
+            },
+            calendar_invitees: [],
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      const result = await searchMeetings("user-123", { query: "alice" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].recording_id).toBe(1);
+    });
+
+    it("matches on recorded_by email", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "Sync",
+            meeting_title: null,
+            recording_id: 1,
+            recorded_by: {
+              name: "Alice Johnson",
+              email: "alice@acme.com",
+              email_domain: "acme.com",
+              team: null,
+            },
+            calendar_invitees: [],
+          },
+          {
+            title: "Standup",
+            meeting_title: null,
+            recording_id: 2,
+            recorded_by: {
+              name: "Bob Smith",
+              email: "bob@other.com",
+              email_domain: "other.com",
+              team: null,
+            },
+            calendar_invitees: [],
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      const result = await searchMeetings("user-123", { query: "acme.com" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].recording_id).toBe(1);
+    });
+
+    it("matches on calendar invitee name", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "Demo",
+            meeting_title: null,
+            recording_id: 1,
+            ...withInvitees([
+              { name: "Jane Prospect", email: "jane@prospect.com" },
+            ]),
+          },
+          {
+            title: "Internal Sync",
+            meeting_title: null,
+            recording_id: 2,
+            ...withInvitees([
+              { name: "Internal User", email: "user@internal.com" },
+            ]),
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      const result = await searchMeetings("user-123", { query: "prospect" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].recording_id).toBe(1);
+    });
+
+    it("matches on calendar invitee email", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "Sales Call",
+            meeting_title: null,
+            recording_id: 1,
+            ...withInvitees([{ name: "Buyer", email: "buyer@bigcorp.com" }]),
+          },
+          {
+            title: "Team Sync",
+            meeting_title: null,
+            recording_id: 2,
+            ...withInvitees([
+              { name: "Teammate", email: "teammate@internal.com" },
+            ]),
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      const result = await searchMeetings("user-123", { query: "bigcorp" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].recording_id).toBe(1);
+    });
+
+    it("returns no matches when query does not match any field", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "Weekly Standup",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      const result = await searchMeetings("user-123", { query: "zzznomatch" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(0);
+    });
+
+    it("fetches subsequent pages when first page has no matches", async () => {
+      mockClient.listMeetings
+        .mockResolvedValueOnce({
+          items: [
+            {
+              title: "No Match",
+              meeting_title: null,
+              recording_id: 1,
+              ...noMatch,
+            },
+          ],
+          limit: 20,
+          next_cursor: "page-2",
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              title: "Target Meeting",
+              meeting_title: null,
+              recording_id: 2,
+              ...noMatch,
+            },
+          ],
+          limit: 20,
+          next_cursor: null,
+        });
+
+      const result = await searchMeetings("user-123", { query: "target" });
+
+      expect(mockClient.listMeetings).toHaveBeenCalledTimes(2);
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0].recording_id).toBe(2);
+    });
+
+    it("collects matches across multiple pages", async () => {
+      mockClient.listMeetings
+        .mockResolvedValueOnce({
+          items: [
+            {
+              title: "Sprint Review Page 1",
+              meeting_title: null,
+              recording_id: 1,
+              ...noMatch,
+            },
+          ],
+          limit: 20,
+          next_cursor: "page-2",
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              title: "Sprint Review Page 2",
+              meeting_title: null,
+              recording_id: 2,
+              ...noMatch,
+            },
+          ],
+          limit: 20,
+          next_cursor: null,
+        });
+
+      const result = await searchMeetings("user-123", { query: "sprint" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.items).toHaveLength(2);
+      expect(parsed.items[0].recording_id).toBe(1);
+      expect(parsed.items[1].recording_id).toBe(2);
+    });
+
+    it("stops after MAX_SEARCH_PAGES even when next_cursor is still present", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "No Match",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
+        ],
+        limit: 20,
+        next_cursor: "always-more",
+      });
+
+      await searchMeetings("user-123", { query: "target" });
+
+      expect(mockClient.listMeetings).toHaveBeenCalledTimes(5);
+    });
+
+    it("stops early when next_cursor is null before hitting page limit", async () => {
+      mockClient.listMeetings.mockResolvedValueOnce({
+        items: [
+          {
+            title: "Only Page",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      await searchMeetings("user-123", { query: "only" });
+
+      expect(mockClient.listMeetings).toHaveBeenCalledTimes(1);
+    });
+
+    it("response includes total_searched count across all pages", async () => {
+      mockClient.listMeetings
+        .mockResolvedValueOnce({
+          items: [
+            {
+              title: "Meeting A",
+              meeting_title: null,
+              recording_id: 1,
+              ...noMatch,
+            },
+            {
+              title: "Meeting B",
+              meeting_title: null,
+              recording_id: 2,
+              ...noMatch,
+            },
+          ],
+          limit: 20,
+          next_cursor: "page-2",
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              title: "Meeting C",
+              meeting_title: null,
+              recording_id: 3,
+              ...noMatch,
+            },
+          ],
+          limit: 20,
+          next_cursor: null,
+        });
+
+      const result = await searchMeetings("user-123", { query: "zzznomatch" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.total_searched).toBe(3);
+    });
+
+    it("response includes null next_cursor when all pages exhausted", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "Meeting",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
+        ],
+        limit: 20,
+        next_cursor: null,
+      });
+
+      const result = await searchMeetings("user-123", { query: "meeting" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.next_cursor).toBeNull();
+    });
+
+    it("response includes non-null next_cursor when stopped at page limit", async () => {
+      mockClient.listMeetings.mockResolvedValue({
+        items: [
+          {
+            title: "No Match",
+            meeting_title: null,
+            recording_id: 1,
+            ...noMatch,
+          },
+        ],
+        limit: 20,
+        next_cursor: "always-more",
+      });
+
+      const result = await searchMeetings("user-123", { query: "target" });
+
+      const parsed = JSON.parse(getTextContent(result));
+      expect(parsed.next_cursor).toBe("always-more");
     });
 
     it("returns error when query missing", async () => {

@@ -21,6 +21,7 @@ export const OAUTH_RATE_LIMIT_MAX = 10;
 // Fathom API
 export const FATHOM_API_TIMEOUT_MS = 30 * 1000;
 export const FATHOM_API_SCOPE = "public_api";
+export const MAX_SEARCH_PAGES = 5;
 
 // OAuth (shared)
 export const BEARER_PREFIX = "Bearer ";

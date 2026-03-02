@@ -79,11 +79,12 @@ export function createToolServer(
     {
       title: "Search Meetings",
       description:
-        "Search Fathom meetings by title or meeting_title. Required: query (search term). " +
-        "Optional filters: cursor (pagination; pass next_cursor from the previous response to get the next page), " +
+        "Search Fathom meetings by title, meeting title, host name, host email, or attendee name/email. " +
+        "Automatically scans up to 5 pages of results. Required: query (search term). " +
+        "Optional filters: cursor (pass next_cursor from a previous response to continue searching from that point), " +
         "created_after, created_before (ISO timestamps), calendar_invitees_domains, calendar_invitees_domains_type, " +
         "teams, recorded_by, include_action_items (boolean), include_crm_matches (boolean). " +
-        "Response includes next_cursor: when non-null, call again with cursor set to that value to search more meetings.",
+        "Response includes next_cursor (non-null means more pages exist) and total_searched (meetings scanned).",
       inputSchema: searchMeetingsReqSchema.shape,
       annotations: { readOnlyHint: true },
     },
