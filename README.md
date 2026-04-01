@@ -159,7 +159,7 @@ npm run start        # Run production build
 npm run lint         # Check for linting errors
 npm run lint:fix     # Fix linting errors
 npm run typecheck    # Run TypeScript type checking
-npm run ci           # Run all CI checks (lint, typecheck, build)
+npm run ci           # Run all CI checks (lint, typecheck, test, build)
 npm run format       # Format code with Prettier
 npm run db:studio    # Open Drizzle Studio for database inspection
 npm run db:generate  # Generate migrations from schema changes
