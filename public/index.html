@@ -273,8 +273,12 @@
 
       <div class="url-box">
         <div class="url-label">Add to Claude Desktop</div>
-        <div class="url-value">https://www.fathom-mcp-server.com/mcp</div>
+        <div class="url-value" id="mcp-url"></div>
       </div>
+      <script>
+        document.getElementById("mcp-url").textContent =
+          window.location.origin + "/mcp";
+      </script>
 
       <div class="tools">
         <h2>Available Tools</h2>
